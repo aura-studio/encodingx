@@ -2,8 +2,8 @@ github.com/aura-studio/magic v1.0.0 h1:zuBYrPqODDN+Nv8SnDcXtF3Hwsf3yvn9/4+PJ9Er+
 github.com/aura-studio/magic v1.0.0/go.mod h1:bLbDd1HAKMxs+eJssOZ2YZUom/VbY3ZlaPDFZplt+NM=
 github.com/aura-studio/reflectx v1.0.0 h1:MOJUgSx6IqmnRKypvNLLuuFBdLeO7oFpLRwHI8vbCx4=
 github.com/aura-studio/reflectx v1.0.0/go.mod h1:p3YlyF5X1OM2EHZFn++kNXjOuYoHVnpb+8lhAahJIfM=
-github.com/aura-studio/style v1.0.0 h1:hRC61ta1S/9FEHaNupbUhZeWA3/nFW5wJkf28O8dIuk=
-github.com/aura-studio/style v1.0.0/go.mod h1:uaUQ1I+AbygV1Hx4Dv84ukVBRqUvzapZ+YbqXblRdQg=
+github.com/aura-studio/style v1.0.1 h1:SrRC+V1XI4s6L2lh4GG/AGZAXMow7AWpI5aEYJvcMFQ=
+github.com/aura-studio/style v1.0.1/go.mod h1:uaUQ1I+AbygV1Hx4Dv84ukVBRqUvzapZ+YbqXblRdQg=
 github.com/gocarina/gocsv v0.0.0-20221105105431-c8ef78125b99 h1:qNAaZUnCulf2xIQc7rM6F3uGYr80h40rtilsVKyAHoM=
 github.com/gocarina/gocsv v0.0.0-20221105105431-c8ef78125b99/go.mod h1:5YoVOkjYAQumqlV356Hj3xeYh4BdZuLE0/nRkf2NKkI=
 github.com/golang/protobuf v1.5.0/go.mod h1:FsONVRAS9T7sI+LIUmWTfcYkHO4aIWwzhcaSAoJOfIk=
