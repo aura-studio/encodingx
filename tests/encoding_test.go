@@ -1,4 +1,4 @@
-﻿package encodingx_test
+package encodingx_test
 
 import (
 	"reflect"

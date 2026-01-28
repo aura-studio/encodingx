@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package testdata;
+
+option go_package = ".;testdata";
+
+// TestMessage is a simple message for testing basic serialization
+message TestMessage {
+    int32 int_field = 1;
+    string string_field = 2;
+    bool bool_field = 3;
+}
+
+// NestedMessage is used to test nested message serialization
+message NestedMessage {
+    string name = 1;
+    TestMessage inner = 2;
+}
+
+// EmptyMessage is used to test empty message serialization
+message EmptyMessage {}

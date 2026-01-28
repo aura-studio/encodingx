@@ -1,4 +1,4 @@
-﻿package encodingx
+package encodingx
 
 import (
 	"encoding/json"

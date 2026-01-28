@@ -1,9 +1,9 @@
-﻿package encodingx
+package encodingx
 
 import (
 	"github.com/aura-studio/reflectx"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type YAML struct{}
