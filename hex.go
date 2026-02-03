@@ -17,9 +17,9 @@ var (
 )
 
 // ============================================================================
-// Hex - Simple hex encoding with length prefix
-// Format: [4 bytes length (big-endian)] + [raw data]
-// Output length = (4 + data_length) * 2 hex characters
+// Hex - Pure hex encoding (no length prefix)
+// Format: [raw data] -> hex string
+// Output length = data_length * 2 hex characters
 // ============================================================================
 
 type Hex struct{}
@@ -48,11 +48,7 @@ func (Hex) Marshal(v any) ([]byte, error) {
 		return nil, ErrHexWrongValueType
 	}
 
-	output := make([]byte, 4+len(data))
-	binary.BigEndian.PutUint32(output[:4], uint32(len(data)))
-	copy(output[4:], data)
-
-	return []byte(hex.EncodeToString(output)), nil
+	return []byte(hex.EncodeToString(data)), nil
 }
 
 func (Hex) Unmarshal(data []byte, v any) error {
@@ -61,16 +57,7 @@ func (Hex) Unmarshal(data []byte, v any) error {
 		return err
 	}
 
-	if len(decoded) < 4 {
-		return ErrHexInvalidData
-	}
-
-	dataLen := int(binary.BigEndian.Uint32(decoded[:4]))
-	if dataLen != len(decoded)-4 {
-		return ErrHexInvalidData
-	}
-
-	return fromBytes(decoded[4:], v)
+	return fromBytes(decoded, v)
 }
 
 func (h Hex) Reverse() Encoding {
