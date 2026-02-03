@@ -1,9 +1,12 @@
 package encodingx
 
 import (
+	"bytes"
+	"compress/zlib"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"io"
 
 	"github.com/aura-studio/reflectx"
 )
@@ -13,14 +16,18 @@ var (
 	ErrHexInvalidData    = errors.New("encoding Hex invalid data")
 )
 
-// Hex is a gradient hex encoding without compression.
-// Output lengths: 16 -> 32 -> 64 -> 128 -> 256 -> ... characters (doubles each tier)
-// No upper limit - automatically expands to fit data.
-// Format: [4 bytes length prefix (big-endian)] + [raw data] + [padding]
+// ============================================================================
+// Hex - Simple hex encoding with length prefix
+// Format: [4 bytes length (big-endian)] + [raw data]
+// Output length = (4 + data_length) * 2 hex characters
+// ============================================================================
+
 type Hex struct{}
 
 func init() {
 	register(NewHex())
+	register(NewHexTier())
+	register(NewHexZlib())
 }
 
 func NewHex() *Hex {
@@ -35,42 +42,68 @@ func (Hex) Style() EncodingStyleType {
 	return EncodingStyleBytes
 }
 
-// findHexTierSize finds the smallest tier that can hold the payload
-// Tiers: 8, 16, 32, 64, 128, 256, ... bytes (no upper limit)
-func findHexTierSize(payloadLen int) int {
-	tierSize := 8
-	for tierSize < payloadLen {
-		tierSize *= 2
-	}
-	return tierSize
-}
-
-// isHexTierSize checks if size is a valid tier (power of 2, >= 8)
-func isHexTierSize(size int) bool {
-	if size < 8 {
-		return false
-	}
-	return size&(size-1) == 0
-}
-
-func (Hex) Marshal(v interface{}) ([]byte, error) {
-	var data []byte
-	switch v := v.(type) {
-	case []byte:
-		data = v
-	case Bytes:
-		data = v.Data
-	case *Bytes:
-		data = v.Data
-	default:
+func (Hex) Marshal(v any) ([]byte, error) {
+	data, err := toBytes(v)
+	if err != nil {
 		return nil, ErrHexWrongValueType
 	}
 
-	// Find suitable tier (need 4 bytes for length prefix)
-	payloadLen := len(data) + 4
-	tierSize := findHexTierSize(payloadLen)
+	output := make([]byte, 4+len(data))
+	binary.BigEndian.PutUint32(output[:4], uint32(len(data)))
+	copy(output[4:], data)
 
-	// Build output: [4 bytes length (big-endian)] + [data] + [zero padding]
+	return []byte(hex.EncodeToString(output)), nil
+}
+
+func (Hex) Unmarshal(data []byte, v any) error {
+	decoded, err := hex.DecodeString(string(data))
+	if err != nil {
+		return err
+	}
+
+	if len(decoded) < 4 {
+		return ErrHexInvalidData
+	}
+
+	dataLen := int(binary.BigEndian.Uint32(decoded[:4]))
+	if dataLen != len(decoded)-4 {
+		return ErrHexInvalidData
+	}
+
+	return fromBytes(decoded[4:], v)
+}
+
+func (h Hex) Reverse() Encoding {
+	return h
+}
+
+// ============================================================================
+// HexTier - Hex encoding with tier padding (no compression)
+// Format: [4 bytes length (big-endian)] + [raw data] + [zero padding]
+// Tiers: 8, 16, 32, 64, 128, 256, ... bytes (power of 2)
+// ============================================================================
+
+type HexTier struct{}
+
+func NewHexTier() *HexTier {
+	return new(HexTier)
+}
+
+func (h HexTier) String() string {
+	return reflectx.TypeName(h)
+}
+
+func (HexTier) Style() EncodingStyleType {
+	return EncodingStyleBytes
+}
+
+func (HexTier) Marshal(v any) ([]byte, error) {
+	data, err := toBytes(v)
+	if err != nil {
+		return nil, ErrHexWrongValueType
+	}
+
+	tierSize := findTierSize(len(data) + 4)
 	output := make([]byte, tierSize)
 	binary.BigEndian.PutUint32(output[:4], uint32(len(data)))
 	copy(output[4:], data)
@@ -78,15 +111,13 @@ func (Hex) Marshal(v interface{}) ([]byte, error) {
 	return []byte(hex.EncodeToString(output)), nil
 }
 
-func (Hex) Unmarshal(data []byte, v interface{}) error {
-	// Decode hex
+func (HexTier) Unmarshal(data []byte, v any) error {
 	decoded, err := hex.DecodeString(string(data))
 	if err != nil {
 		return err
 	}
 
-	// Validate length is a valid tier
-	if !isHexTierSize(len(decoded)) {
+	if !isTierSize(len(decoded)) {
 		return ErrHexInvalidData
 	}
 
@@ -94,22 +125,139 @@ func (Hex) Unmarshal(data []byte, v interface{}) error {
 		return ErrHexInvalidData
 	}
 
-	// Extract data length
 	dataLen := int(binary.BigEndian.Uint32(decoded[:4]))
 	if dataLen > len(decoded)-4 {
 		return ErrHexInvalidData
 	}
-	rawData := decoded[4 : 4+dataLen]
 
+	return fromBytes(decoded[4:4+dataLen], v)
+}
+
+func (h HexTier) Reverse() Encoding {
+	return h
+}
+
+// ============================================================================
+// HexZlib - Hex encoding with zlib compression and tier padding
+// Format: [4 bytes length (big-endian)] + [zlib compressed data] + [zero padding]
+// Tiers: 8, 16, 32, 64, 128, 256, ... bytes (power of 2)
+// ============================================================================
+
+type HexZlib struct{}
+
+func NewHexZlib() *HexZlib {
+	return new(HexZlib)
+}
+
+func (h HexZlib) String() string {
+	return reflectx.TypeName(h)
+}
+
+func (HexZlib) Style() EncodingStyleType {
+	return EncodingStyleBytes
+}
+
+func (HexZlib) Marshal(v any) ([]byte, error) {
+	data, err := toBytes(v)
+	if err != nil {
+		return nil, ErrHexWrongValueType
+	}
+
+	// Compress
+	var buf bytes.Buffer
+	w := zlib.NewWriter(&buf)
+	w.Write(data)
+	w.Close()
+	compressed := buf.Bytes()
+
+	tierSize := findTierSize(len(compressed) + 4)
+	output := make([]byte, tierSize)
+	binary.BigEndian.PutUint32(output[:4], uint32(len(compressed)))
+	copy(output[4:], compressed)
+
+	return []byte(hex.EncodeToString(output)), nil
+}
+
+func (HexZlib) Unmarshal(data []byte, v any) error {
+	decoded, err := hex.DecodeString(string(data))
+	if err != nil {
+		return err
+	}
+
+	if !isTierSize(len(decoded)) {
+		return ErrHexInvalidData
+	}
+
+	if len(decoded) < 4 {
+		return ErrHexInvalidData
+	}
+
+	compressedLen := int(binary.BigEndian.Uint32(decoded[:4]))
+	if compressedLen > len(decoded)-4 {
+		return ErrHexInvalidData
+	}
+
+	// Decompress
+	r, err := zlib.NewReader(bytes.NewReader(decoded[4 : 4+compressedLen]))
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	decompressed, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+
+	return fromBytes(decompressed, v)
+}
+
+func (h HexZlib) Reverse() Encoding {
+	return h
+}
+
+// ============================================================================
+// Helper functions
+// ============================================================================
+
+// findTierSize finds the smallest tier (power of 2, >= 8) that can hold the payload
+func findTierSize(payloadLen int) int {
+	tierSize := 8
+	for tierSize < payloadLen {
+		tierSize *= 2
+	}
+	return tierSize
+}
+
+// isTierSize checks if size is a valid tier (power of 2, >= 8)
+func isTierSize(size int) bool {
+	if size < 8 {
+		return false
+	}
+	return size&(size-1) == 0
+}
+
+// toBytes converts value to []byte
+func toBytes(v any) ([]byte, error) {
+	switch v := v.(type) {
+	case []byte:
+		return v, nil
+	case Bytes:
+		return v.Data, nil
+	case *Bytes:
+		return v.Data, nil
+	default:
+		return nil, ErrHexWrongValueType
+	}
+}
+
+// fromBytes sets []byte to target value
+func fromBytes(data []byte, v any) error {
 	switch v := v.(type) {
 	case *Bytes:
-		v.Data = rawData
+		v.Data = data
 		return nil
 	default:
 		return ErrHexWrongValueType
 	}
-}
-
-func (h Hex) Reverse() Encoding {
-	return h
 }

@@ -108,18 +108,18 @@ func TestHexTierMarshalWrongType(t *testing.T) {
 	enc := encodingx.NewHexTier()
 
 	_, err := enc.Marshal(123)
-	if err != encodingx.ErrHexTierWrongValueType {
-		t.Errorf("expected ErrHexTierWrongValueType, got %v", err)
+	if err != encodingx.ErrHexWrongValueType {
+		t.Errorf("expected ErrHexWrongValueType, got %v", err)
 	}
 
 	_, err = enc.Marshal("string")
-	if err != encodingx.ErrHexTierWrongValueType {
-		t.Errorf("expected ErrHexTierWrongValueType, got %v", err)
+	if err != encodingx.ErrHexWrongValueType {
+		t.Errorf("expected ErrHexWrongValueType, got %v", err)
 	}
 
 	_, err = enc.Marshal(map[string]int{"key": 1})
-	if err != encodingx.ErrHexTierWrongValueType {
-		t.Errorf("expected ErrHexTierWrongValueType, got %v", err)
+	if err != encodingx.ErrHexWrongValueType {
+		t.Errorf("expected ErrHexWrongValueType, got %v", err)
 	}
 }
 
@@ -141,8 +141,8 @@ func TestHexTierUnmarshalInvalidTierSize(t *testing.T) {
 
 	// 6 bytes (12 hex chars) is not a valid tier
 	err := enc.Unmarshal([]byte("000000000000"), &result)
-	if err != encodingx.ErrHexTierInvalidData {
-		t.Errorf("expected ErrHexTierInvalidData, got %v", err)
+	if err != encodingx.ErrHexInvalidData {
+		t.Errorf("expected ErrHexInvalidData, got %v", err)
 	}
 }
 
