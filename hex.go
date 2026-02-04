@@ -3,6 +3,7 @@ package encodingx
 import (
 	"bytes"
 	"compress/zlib"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -27,6 +28,7 @@ type Hex struct{}
 func init() {
 	register(NewHex())
 	register(NewHexTier())
+	register(NewHexTierRand())
 	register(NewHexZlib())
 }
 
@@ -122,6 +124,111 @@ func (HexTier) Unmarshal(data []byte, v any) error {
 
 func (h HexTier) Reverse() Encoding {
 	return h
+}
+
+// ============================================================================
+// HexTierRand - Hex encoding with random padding and rolling XOR obfuscation
+// Format: [4 bytes random key] + [4 bytes XORed length] + [XORed data] + [random padding]
+// Tiers: 16, 32, 64, 128, 256, ... bytes (power of 2, min 16 for key+length)
+// Each byte uses different XOR key (rolling), making output appear fully random
+// ============================================================================
+
+type HexTierRand struct{}
+
+func NewHexTierRand() *HexTierRand {
+	return new(HexTierRand)
+}
+
+func (h HexTierRand) String() string {
+	return reflectx.TypeName(h)
+}
+
+func (HexTierRand) Style() EncodingStyleType {
+	return EncodingStyleBytes
+}
+
+func (HexTierRand) Marshal(v any) ([]byte, error) {
+	data, err := toBytes(v)
+	if err != nil {
+		return nil, ErrHexWrongValueType
+	}
+
+	// Generate 4-byte random key
+	key := make([]byte, 4)
+	rand.Read(key)
+
+	tierSize := findTierSizeMin(len(data)+8, 16) // min 16 for key(4)+len(4)+data
+	output := make([]byte, tierSize)
+
+	// Fill entire buffer with random bytes first (random padding)
+	rand.Read(output)
+
+	// First 4 bytes: random key (unobfuscated)
+	copy(output[:4], key)
+
+	// Next 4 bytes: length XORed with rolling key
+	lenBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(lenBytes, uint32(len(data)))
+	for i := 0; i < 4; i++ {
+		output[4+i] = lenBytes[i] ^ key[i]
+	}
+
+	// XOR data with rolling key
+	for i, b := range data {
+		output[8+i] = b ^ key[i%4]
+	}
+
+	return []byte(hex.EncodeToString(output)), nil
+}
+
+func (HexTierRand) Unmarshal(data []byte, v any) error {
+	decoded, err := hex.DecodeString(string(data))
+	if err != nil {
+		return err
+	}
+
+	if !isTierSize(len(decoded)) {
+		return ErrHexInvalidData
+	}
+
+	if len(decoded) < 8 {
+		return ErrHexInvalidData
+	}
+
+	// Extract 4-byte key
+	key := decoded[:4]
+
+	// Extract length (XOR decode with rolling key)
+	lenBytes := make([]byte, 4)
+	for i := 0; i < 4; i++ {
+		lenBytes[i] = decoded[4+i] ^ key[i]
+	}
+	dataLen := int(binary.BigEndian.Uint32(lenBytes))
+
+	if dataLen > len(decoded)-8 {
+		return ErrHexInvalidData
+	}
+
+	// XOR decode the data with rolling key
+	result := make([]byte, dataLen)
+	for i := 0; i < dataLen; i++ {
+		result[i] = decoded[8+i] ^ key[i%4]
+	}
+
+	return fromBytes(result, v)
+}
+
+func (h HexTierRand) Reverse() Encoding {
+	return h
+}
+
+// findTierSizeMin finds the smallest tier (power of 2) >= minTier that can hold the payload
+func findTierSizeMin(payloadLen, minTier int) int {
+	tierSize := minTier
+	for tierSize < payloadLen {
+		tierSize *= 2
+	}
+	return tierSize
 }
 
 // ============================================================================
